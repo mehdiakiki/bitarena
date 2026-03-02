@@ -2,20 +2,101 @@
 
 [![Crates.io](https://img.shields.io/crates/v/bitarena.svg)](https://crates.io/crates/bitarena)
 [![Docs.rs](https://docs.rs/bitarena/badge.svg)](https://docs.rs/bitarena)
-[![CI](https://github.com/TODO/bitarena/workflows/CI/badge.svg)](https://github.com/TODO/bitarena/actions)
+[![CI](https://github.com/mehdiakiki/bitarena/actions/workflows/ci.yml/badge.svg)](https://github.com/mehdiakiki/bitarena/actions/workflows/ci.yml)
 [![Checked with Miri](https://img.shields.io/badge/miri-checked-green.svg)](https://github.com/rust-lang/miri)
 
-A high-performance generational arena for Rust focused on iteration throughput.
+A high-performance generational arena for Rust optimized for iteration-heavy workloads.
 
-`bitarena` keeps the same generational-handle model developers already use, but replaces entry-by-entry scanning with bitset-driven scanning so sparse iteration is dramatically faster.
+`bitarena` keeps the familiar handle-based API (`Arena<T>` + generational `Index`) but makes iteration fast by scanning a packed occupancy bitset instead of touching every slot.
 
 ## Why use bitarena
 
-- Fast sparse iteration: skip empty regions 64 slots at a time.
-- Stable generational indices (`Index`) for safe handle invalidation.
+- Fast sparse iteration: skip empty regions 64 slots at a time (bitset word scan).
+- Stable generational indices: remove/reuse invalidates stale handles.
+- Great fit for game/ECS-like loops: churn (spawn/despawn) + iterate every frame.
 - Drop-in migration path from `thunderdome` for most codebases.
-- `no_std` support (with `alloc`).
-- Optional `serde` and read-only `rayon` parallel iteration.
+- `no_std` support (with `alloc`), plus optional `serde` and read-only `rayon`.
+
+## Real-World Scenario: Game Loop Frame
+
+This is the shape of workload `bitarena` is built for: stable handles, frequent churn, and frequent iteration.
+
+```rust
+use bitarena::Arena;
+
+#[derive(Clone, Copy)]
+struct Position { x: f32, y: f32 }
+
+fn main() {
+    let mut pos: Arena<Position> = Arena::with_capacity(10_000);
+    let mut live = Vec::new();
+
+    // Spawn
+    for i in 0..10_000u32 {
+        live.push(pos.insert(Position { x: i as f32, y: 0.0 }));
+    }
+
+    // Frame: despawn some, spawn some, iterate all
+    for frame in 0..60u32 {
+        // churn: remove 100
+        for i in 0..100usize {
+            let idx = live.swap_remove(i);
+            pos.remove(idx);
+        }
+        // churn: insert 100
+        for i in 0..100u32 {
+            live.push(pos.insert(Position { x: (frame * 100 + i) as f32, y: 0.0 }));
+        }
+
+        // iterate
+        let mut sum = 0.0f32;
+        for (_, p) in pos.iter() {
+            sum += p.x;
+        }
+        std::hint::black_box(sum);
+    }
+}
+```
+
+## Benchmarks (How It Compares)
+
+Measured on Intel i7-1260P, Linux, `--release`. Arena size: 100,000 slots.
+
+> `dense_slotmap` is included for context: it wins iteration by keeping a compact dense array, but has different trade-offs (not a drop-in replacement for generational arenas).
+
+### Iteration (same API shape, different sparsity)
+
+| Sparsity | bitarena | thunderdome | slotmap | dense_slotmap |
+|----------|----------|-------------|---------|---------------|
+| 0% empty | 29.5 us | 50.0 us | 43.1 us | 6.2 us |
+| 50% empty | 29.9 us | 304 us | 303 us | 2.8 us |
+| 90% empty | 6.1 us | 108 us | 104 us | 0.78 us |
+| 99% empty | 1.3 us | 49.4 us | 39.6 us | 0.07 us |
+| 99.9% empty | 435 ns | 38.4 us | 29.1 us | 6.9 ns |
+
+### Simulated Game Loop Frame (10k entities)
+
+Each frame: remove 100, insert 100, iterate all.
+
+| Container | Frame time |
+|----------|------------|
+| bitarena | 27.6 us |
+| thunderdome | 29.7 us |
+| slotmap | 28.8 us |
+| dense_slotmap | 25.6 us |
+
+### Point Ops (random get is competitive)
+
+| Operation | bitarena | thunderdome |
+|-----------|----------|-------------|
+| Get (random) | 1.5 ns | 2.0 ns |
+| Insert (per item) | 2.4 ns | 1.3 ns |
+| Remove (per item) | 3.4 ns | 2.1 ns |
+
+Interpretation:
+
+- If your workload iterates sparse arenas heavily, bitarena is usually a strong upgrade over enum-scanning arenas.
+- If your workload is dominated by inserts/removes and rarely iterates, benchmark your exact mix.
 
 ## Strong Drop-In Story (thunderdome)
 
@@ -52,33 +133,6 @@ assert_eq!(arena.get(a), None); // stale index
 let c = arena.insert("baz"); // slot reuse with bumped generation
 assert_eq!(arena[c], "baz");
 ```
-
-## Performance Snapshot
-
-Benchmarked on Intel i7-1260P, Linux, `--release`, 100,000 slots.
-
-### Iteration (bitarena vs thunderdome)
-
-| Sparsity | bitarena | thunderdome | Speedup |
-|----------|----------|-------------|---------|
-| 0% empty | 29.5 us | 50.0 us | 1.7x |
-| 50% empty | 29.9 us | 304 us | 10x |
-| 90% empty | 6.1 us | 108 us | 17.6x |
-| 99% empty | 1.3 us | 49.4 us | 39x |
-| 99.9% empty | 435 ns | 38.4 us | 88x |
-
-### Point Ops (random get is very competitive)
-
-| Operation | bitarena | thunderdome |
-|-----------|----------|-------------|
-| Get (random) | 1.5 ns | 2.0 ns |
-| Insert (per item) | 2.4 ns | 1.3 ns |
-| Remove (per item) | 3.4 ns | 2.1 ns |
-
-Interpretation:
-
-- If your workload iterates sparse arenas heavily, bitarena is usually a strong upgrade.
-- If your workload is dominated by inserts/removes, benchmark your exact mix.
 
 ## Parallel Iteration (Rayon)
 
@@ -126,4 +180,4 @@ Validation stack:
 
 ## License
 
-Licensed under [MIT](LICENSE-MIT).
+Licensed under MIT OR Apache-2.0.

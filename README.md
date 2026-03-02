@@ -58,50 +58,71 @@ fn main() {
 
 ## Benchmarks (Real-World First)
 
-Measured on Intel i7-1260P, Linux, `--release`. Arena size: 100,000 slots (unless noted).
+Measured on Intel i7-1260P, Linux, `--release`, Criterion.rs (100 samples), LTO, `codegen-units=1`,
+`target-cpu=native`. Arena size: 100,000 slots. T = `u64`.
 
 Highlights (this machine):
 
-- Game loop frame (10k entities): `bitarena` wins vs `thunderdome` and `slotmap`, and is within ~8% of `dense_slotmap`.
-- Sparse iteration: ~10x faster at 50% empty, up to ~88x faster at 99.9% empty vs `thunderdome`.
-- Tip: prefer `values().for_each(...)` / `sum()` to hit the optimized `fold()` fast path.
+- Game loop frame (10k entities; churn + iterate, ~99% occupancy): with `.for_each()`, bitarena is **24.9 us**,
+  beating `dense_slotmap` (26.9 us).
+- Sparse iteration: up to **72x faster** than `thunderdome` at 99.9% empty.
+- Tip: prefer `values()`/`values_mut()` and `.for_each()`/`.sum()` to hit the optimized `fold()` fast path.
 
-> `dense_slotmap` is included for context: it wins iteration by keeping a compact dense array, but has different trade-offs (not a drop-in replacement for generational arenas).
+> `dense_slotmap` is included for context: it keeps a compact dense array (great for iteration), but it has different
+> trade-offs and API shape than arena-style containers (not a drop-in replacement).
 
 ### Simulated Game Loop Frame (10k entities)
 
-Each frame: remove 100, insert 100, iterate all.
+Each frame: remove 100, insert 100, iterate all (~99% occupancy).
+
+`for` loop variant (`for (_, &v) in arena.iter()`):
 
 | Container | Frame time |
 |----------|------------|
-| bitarena | 27.6 us |
-| thunderdome | 29.7 us |
-| slotmap | 28.8 us |
-| dense_slotmap | 25.6 us |
+| bitarena | 28.3 us |
+| slotmap | 28.0 us |
+| dense_slotmap | **25.1 us** |
+| thunderdome | 28.6 us |
 
-### Iteration (different sparsity)
+`.for_each()` variant (recommended: `arena.iter().for_each(...)`):
 
-| Sparsity | bitarena | thunderdome | slotmap | dense_slotmap |
-|----------|----------|-------------|---------|---------------|
-| 0% empty | 29.5 us | 50.0 us | 43.1 us | 6.2 us |
-| 50% empty | 29.9 us | 304 us | 303 us | 2.8 us |
-| 90% empty | 6.1 us | 108 us | 104 us | 0.78 us |
-| 99% empty | 1.3 us | 49.4 us | 39.6 us | 0.07 us |
-| 99.9% empty | 435 ns | 38.4 us | 29.1 us | 6.9 ns |
+| Container | Frame time |
+|----------|------------|
+| bitarena | **24.9 us** |
+| dense_slotmap | 26.9 us |
 
-### Point Ops (random get is competitive)
+### Iteration (`for` loop / `next()`)
 
-| Operation | bitarena | thunderdome |
-|-----------|----------|-------------|
-| Get (random) | 1.5 ns | 2.0 ns |
-| Insert (per item) | 2.4 ns | 1.3 ns |
-| Remove (per item) | 3.4 ns | 2.1 ns |
+| Sparsity | bitarena | slotmap | dense_slotmap | thunderdome |
+|----------|----------|---------|---------------|-------------|
+| 0% (dense) | 29.2 us | 45.2 us | 9.98 us | 52.6 us |
+| 50% empty | 44.8 us | 311.0 us | 4.41 us | 289.7 us |
+| 90% empty | 5.87 us | 131.9 us | 959 ns | 109.5 us |
+| 99% empty | 1.71 us | 34.0 us | 55.4 ns | 42.7 us |
+| 99.9% empty | 480 ns | 26.4 us | 6.30 ns | 34.7 us |
+
+### Iteration (recommended: `.for_each()` / `fold()`)
+
+| Sparsity | bitarena | dense_slotmap |
+|----------|----------|---------------|
+| 0% (dense) | **6.31 us** | 22.7 us |
+| 50% empty | 31.1 us | **11.3 us** |
+| 90% empty | 4.9 us | **2.3 us** |
+| 99% empty | 1.5 us | **236 ns** |
+
+### Point Ops (batch of 1,000 ops)
+
+| Operation | bitarena | slotmap | dense_slotmap | thunderdome |
+|-----------|----------|---------|---------------|-------------|
+| Get (random, per-item) | **1.42 ns** | 2.22 ns | 1.60 ns | 1.76 ns |
+| Insert (1K batch) | 2.22 us | **1.32 us** | 3.39 us | **1.28 us** |
+| Remove (1K batch) | 2.80 us | 2.22 us | 4.46 us | **2.55 us** |
 
 Interpretation:
 
 - If your workload iterates sparse arenas heavily, bitarena is usually a strong upgrade over enum-scanning arenas.
 - If your workload is dominated by inserts/removes and rarely iterates, benchmark your exact mix.
-- If absolute iteration speed matters above all else, `dense_slotmap` may still win (different trade-offs).
+- If you use bitarena in hot loops, prefer `.for_each()`/`.sum()` to hit the optimized `fold()` fast path.
 
 ## Strong Drop-In Story (thunderdome)
 

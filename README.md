@@ -48,11 +48,9 @@ fn main() {
             live.push(pos.insert(Position { x: (frame * 100 + i) as f32, y: 0.0 }));
         }
 
-        // iterate
+        // iterate (recommended: values() + for_each() hits the optimized fold() path)
         let mut sum = 0.0f32;
-        for (_, p) in pos.iter() {
-            sum += p.x;
-        }
+        pos.values().for_each(|p| sum += p.x);
         std::hint::black_box(sum);
     }
 }
@@ -97,6 +95,7 @@ Interpretation:
 
 - If your workload iterates sparse arenas heavily, bitarena is usually a strong upgrade over enum-scanning arenas.
 - If your workload is dominated by inserts/removes and rarely iterates, benchmark your exact mix.
+- For maximum single-thread iteration throughput, prefer `values()`/`values_mut()` and `.for_each()`/`.sum()` (they call our `fold()` fast path). A `for` loop uses `next()` and can be slower in dense arenas.
 
 ## Strong Drop-In Story (thunderdome)
 

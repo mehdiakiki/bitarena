@@ -56,21 +56,17 @@ fn main() {
 }
 ```
 
-## Benchmarks (How It Compares)
+## Benchmarks (Real-World First)
 
-Measured on Intel i7-1260P, Linux, `--release`. Arena size: 100,000 slots.
+Measured on Intel i7-1260P, Linux, `--release`. Arena size: 100,000 slots (unless noted).
+
+Highlights (this machine):
+
+- Game loop frame (10k entities): `bitarena` wins vs `thunderdome` and `slotmap`, and is within ~8% of `dense_slotmap`.
+- Sparse iteration: ~10x faster at 50% empty, up to ~88x faster at 99.9% empty vs `thunderdome`.
+- Tip: prefer `values().for_each(...)` / `sum()` to hit the optimized `fold()` fast path.
 
 > `dense_slotmap` is included for context: it wins iteration by keeping a compact dense array, but has different trade-offs (not a drop-in replacement for generational arenas).
-
-### Iteration (same API shape, different sparsity)
-
-| Sparsity | bitarena | thunderdome | slotmap | dense_slotmap |
-|----------|----------|-------------|---------|---------------|
-| 0% empty | 29.5 us | 50.0 us | 43.1 us | 6.2 us |
-| 50% empty | 29.9 us | 304 us | 303 us | 2.8 us |
-| 90% empty | 6.1 us | 108 us | 104 us | 0.78 us |
-| 99% empty | 1.3 us | 49.4 us | 39.6 us | 0.07 us |
-| 99.9% empty | 435 ns | 38.4 us | 29.1 us | 6.9 ns |
 
 ### Simulated Game Loop Frame (10k entities)
 
@@ -82,6 +78,16 @@ Each frame: remove 100, insert 100, iterate all.
 | thunderdome | 29.7 us |
 | slotmap | 28.8 us |
 | dense_slotmap | 25.6 us |
+
+### Iteration (different sparsity)
+
+| Sparsity | bitarena | thunderdome | slotmap | dense_slotmap |
+|----------|----------|-------------|---------|---------------|
+| 0% empty | 29.5 us | 50.0 us | 43.1 us | 6.2 us |
+| 50% empty | 29.9 us | 304 us | 303 us | 2.8 us |
+| 90% empty | 6.1 us | 108 us | 104 us | 0.78 us |
+| 99% empty | 1.3 us | 49.4 us | 39.6 us | 0.07 us |
+| 99.9% empty | 435 ns | 38.4 us | 29.1 us | 6.9 ns |
 
 ### Point Ops (random get is competitive)
 
@@ -95,7 +101,7 @@ Interpretation:
 
 - If your workload iterates sparse arenas heavily, bitarena is usually a strong upgrade over enum-scanning arenas.
 - If your workload is dominated by inserts/removes and rarely iterates, benchmark your exact mix.
-- For maximum single-thread iteration throughput, prefer `values()`/`values_mut()` and `.for_each()`/`.sum()` (they call our `fold()` fast path). A `for` loop uses `next()` and can be slower in dense arenas.
+- If absolute iteration speed matters above all else, `dense_slotmap` may still win (different trade-offs).
 
 ## Strong Drop-In Story (thunderdome)
 

@@ -5,7 +5,8 @@
 [![CI](https://github.com/mehdiakiki/bitarena/actions/workflows/ci.yml/badge.svg)](https://github.com/mehdiakiki/bitarena/actions/workflows/ci.yml)
 [![Checked with Miri](https://img.shields.io/badge/miri-checked-green.svg)](https://github.com/rust-lang/miri)
 
-`bitarena` is a generational arena (`Arena<T>` + `Index`) optimized for **fast sweeps over sparse handle tables**.
+`bitarena` is a bitset-accelerated generational arena for stable handles, optimized for fast sweeps over sparse tables
+(proptest + Miri validated).
 
 - Stable generational handles (`Index`) (stale after `remove`)
 - Bitset-accelerated iteration (skips 64 empty slots at a time)
@@ -64,4 +65,3 @@ Validated with unit tests, a proptest oracle (`tests/oracle_tests.rs`), and Miri
 ## License
 
 MIT (see `LICENSE`).
-

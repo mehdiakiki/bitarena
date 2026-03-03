@@ -4,8 +4,8 @@ Results are directional. Reproduce on your hardware and workload.
 
 Benchmark suites:
 
-- `benches/comparative.rs`: microbenchmarks + a churn+iterate “frame” scenario.
-- `benches/realistic_sizes.rs`: iteration with 256B and 1KiB inline payloads.
+- [`benches/comparative.rs`](benches/comparative.rs): microbenchmarks + a churn+iterate “frame” scenario.
+- [`benches/realistic_sizes.rs`](benches/realistic_sizes.rs): iteration with 256B and 1KiB inline payloads.
 
 ## Takeaways
 
@@ -23,9 +23,9 @@ Commands:
 
 Notes:
 
-- Settings: LTO + `codegen-units=1` (`profile.bench`), `-C target-cpu=native` (repo `.cargo/config.toml`)
+- Settings: LTO + `codegen-units=1` (`profile.bench`), `-C target-cpu=native` (repo [`.cargo/config.toml`](.cargo/config.toml))
 - Criterion HTML reports: `target/criterion` (open `report/index.html`)
-- Full design writeup: `DESIGN.md`
+- Full design writeup: [DESIGN.md](DESIGN.md)
 
 ## Example results (Intel i7-1260P, Linux)
 
@@ -80,7 +80,7 @@ Batch of 1,000 operations. Times are per-batch, except Get (per-item).
 | Insert (1K batch) | 2.22 us | **1.32 us** | 3.39 us | **1.28 us** |
 | Remove (1K batch) | 2.80 us | 2.22 us | 4.46 us | **2.55 us** |
 
-### Realistic payload sizes (`benches/realistic_sizes.rs`)
+### Realistic payload sizes ([`benches/realistic_sizes.rs`](benches/realistic_sizes.rs))
 
 This suite uses fixed-size inline payloads (256B and 1KiB) and compares iteration across different sparsity levels.
 
@@ -89,4 +89,3 @@ It highlights an important nuance:
 - Dense + large inline `T` + “light touch” tends to reward AoS layouts (like `thunderdome`).
 - As sparsity increases, `bitarena` tends to pull ahead strongly because empty slots don’t touch `T` at all.
 - If your loop touches *most* of a large `T`, results tend to become bandwidth-bound and the gap often narrows.
-

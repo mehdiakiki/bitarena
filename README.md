@@ -49,19 +49,20 @@ assert!(arena.get(a).is_none()); // stale index
 
 ## Benchmarks
 
-Full results + reproduction: `BENCHMARKS.md`.
+Full results + reproduction: [BENCHMARKS.md](BENCHMARKS.md).
 
 - `cargo bench --bench comparative`
 - `cargo bench --bench realistic_sizes`
 
 ## Migration
 
-Coming from `thunderdome`: `MIGRATION.md`.
+Coming from `thunderdome`: [MIGRATION.md](MIGRATION.md).
 
 ## Safety
 
-Validated with unit tests, a proptest oracle (`tests/oracle_tests.rs`), and Miri. Design/invariants: `DESIGN.md`.
+Validated with unit tests, a proptest oracle ([tests/oracle_tests.rs](tests/oracle_tests.rs)), and Miri.
+Design/invariants: [DESIGN.md](DESIGN.md).
 
 ## License
 
-MIT (see `LICENSE`).
+MIT (see [LICENSE](LICENSE)).

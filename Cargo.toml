@@ -1,0 +1,68 @@
+[package]
+name = "bitarena"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70.0"
+license = "MIT"
+description = "A bitset-accelerated, cache-friendly generational arena using Struct-of-Arrays layout"
+repository = "https://github.com/mehdiakiki/bitarena"
+keywords = ["arena", "generational", "ecs", "game", "data-structure"]
+categories = ["data-structures", "game-development", "no-std"]
+readme = "README.md"
+
+# ──────────────────────────────────────────────────────────────────────
+# FEATURE FLAGS — Design Notes
+# ──────────────────────────────────────────────────────────────────────
+#
+# Default: std enabled. Users opt into no_std by disabling default features.
+#
+#   [dependencies]
+#   bitarena = { version = "0.1", default-features = false }
+#
+# Rayon: Optional parallel iteration. Zero cost if not enabled.
+# The occupancy bitset (Vec<u64>) is trivially splittable across cores —
+# each thread gets a contiguous chunk of u64 words to scan independently.
+# No synchronization needed during read-only iteration.
+#
+#   [dependencies]
+#   bitarena = { version = "0.1", features = ["rayon"] }
+#
+# Serde: Optional serialization. Thunderdome lacks this; slotmap has it.
+# Including it from the start removes a common reason NOT to switch.
+#
+# ──────────────────────────────────────────────────────────────────────
+
+[features]
+default = ["std"]
+std = []
+rayon = ["std", "dep:rayon"]
+serde = ["dep:serde"]
+
+[dependencies]
+rayon = { version = "1.10", optional = true }
+serde = { version = "1.0", optional = true, default-features = false, features = ["derive", "alloc"] }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.4"
+# thunderdome and slotmap for comparative benchmarks
+thunderdome = "0.6"
+slotmap = "1.0"
+
+[[bench]]
+name = "arena_benchmarks"
+harness = false
+
+[[bench]]
+name = "comparative"
+harness = false
+
+[profile.bench]
+# ──────────────────────────────────────────────────────────────────────
+# CRITICAL: LTO + codegen-units=1 for accurate benchmarks.
+# Without these, the compiler may not inline across crate boundaries,
+# making our crate look artificially slower than thunderdome/slotmap
+# which are compiled as dependencies (and thus cross-crate).
+# ──────────────────────────────────────────────────────────────────────
+lto = true
+codegen-units = 1

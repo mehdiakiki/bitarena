@@ -5,27 +5,33 @@
 [![CI](https://github.com/mehdiakiki/bitarena/actions/workflows/ci.yml/badge.svg)](https://github.com/mehdiakiki/bitarena/actions/workflows/ci.yml)
 [![Checked with Miri](https://img.shields.io/badge/miri-checked-green.svg)](https://github.com/rust-lang/miri)
 
-`bitarena` is a generational arena (`Arena<T>` + `Index`) for Rust.
+`bitarena` is a generational arena (`Arena<T>` + `Index`) optimized for **fast iteration over sparse arenas**.
 
-It's designed for workloads where you keep a large arena around, do churn (insert/remove), and iterate the live set a lot
-(games/ECS, simulations, schedulers, caches).
+It targets a specific (common) pattern:
 
-The core trick is simple: track occupancy in a packed bitset and scan that bitset during iteration, so empty slots are
-skipped 64 at a time.
+- Your arena grows to a high-water mark.
+- You delete a lot of entries over time (so the arena becomes holey).
+- You still need to occasionally or frequently “sweep” the live set (tick/update/expire/garbage-collect).
+
+The core trick is simple: occupancy is tracked in a packed bitset, so iteration can skip **64 empty slots at a time**
+without touching `T` for those empties.
 
 > **TL;DR**
-> - Use `bitarena` when iteration is hot, especially when the arena is sparse.
-> - If you mostly do inserts/removes and rarely iterate, you may not see a win.
+> - Use `bitarena` when you **iterate a sparse handle table** and want it to be fast.
+> - If your arena is usually dense, or you rarely iterate, you may not see a win.
 >
 > **Not a fit if...**
 > - You need insertion-order iteration or stable ordering across churn.
-> - You want packed "only-live-items" storage (consider `DenseSlotMap` or a dense `Vec`).
+> - You want packed “only-live-items” storage (consider `DenseSlotMap` or a dense `Vec`).
+> - Your hot loop is dense iteration over large inline values and only touches a small part of each `T`
+>   (benchmark: `cargo bench --bench realistic_sizes`).
 > - You need more than `u32::MAX` slots (`Index` stores the slot as `u32`).
 
 ## Contents
 
 - [Quick start](#quick-start)
 - [When to use](#when-to-use)
+- [Real-world use cases](#real-world-use-cases)
 - [Semantics](#semantics)
 - [Benchmarks](#benchmarks)
 - [Migration from thunderdome](#migration-from-thunderdome)
@@ -52,22 +58,40 @@ assert!(arena.get(a).is_none()); // stale index
 ```
 
 > **Performance tip**
-> In hot loops, prefer `.values().for_each(...)` / `.sum()`.
+> In hot loops, prefer `.values().for_each(...)` / `.sum()` when you don’t need keys.
 > A `for` loop desugars to repeated `next()` calls; `.for_each()` goes through `fold()`, and `bitarena` overrides
 > `fold()` to process words in bulk (often enabling SIMD on dense words).
+>
+> If `T` is large but your hot loop only touches a small part of it, consider splitting “hot” and “cold” data (or storing
+> the cold payload out-of-line) so the thing you sweep stays small.
 
 ## When to use
 
 `bitarena` is a good fit when:
 
 - You want stable handles (`Index`) and you're OK with them going stale after `remove`.
-- You iterate "all live entities" frequently (every frame/tick).
-- Your arena can get sparse (many holes) and you still want iteration to be fast.
+- You iterate “all live things” frequently (every frame/tick), **and the arena can be sparse**.
+- Your `T` can be large, and you want empties to be skipped without probing `T`.
 
 You might prefer a different container when:
 
-- You primarily care about iterating packed live elements: `DenseSlotMap`, a dense `Vec`, or an ECS archetype layout.
-- You rarely iterate and are dominated by insert/remove throughput: benchmark your exact mix.
+- You primarily care about iterating packed live elements: `DenseSlotMap`, a dense `Vec`, or an ECS archetype/chunk
+  layout.
+- You have a dense table and your hot loop touches only a few fields of a large inline `T` (AoS layouts can win there).
+- You rarely iterate and are dominated by insert/remove throughput (always benchmark your exact mix).
+
+> ECS note: most ECS frameworks (including Bevy) don’t “sweep an arena” in the hot path; they iterate packed archetype
+> storage. `bitarena` is most relevant for *registries/handle tables* (stable IDs) that can become sparse.
+
+## Real-world use cases
+
+Places where the “sparse sweep” pattern comes up:
+
+- **Game/simulation object registries** in non-archetype architectures: stable IDs + periodic `tick_all()`.
+- **Session/connection tables**: stable session IDs; sessions churn; periodic heartbeat/timeout sweeps.
+- **Schedulers / time-wheel-like structures**: tasks churn; periodic sweep for runnable/expired work.
+- **Caches with expiry**: many keys removed/invalidated; periodic sweep/compaction.
+- **Engine subsystems** that aren’t archetype-packed: audio voices, animation clips/players, UI node registries, etc.
 
 ## Semantics
 
@@ -98,6 +122,17 @@ Takeaways:
 - Sparse iteration is the main win: at 99.9% empty, `bitarena` is ~72x faster than `thunderdome` here (480 ns vs 34.7 us).
 - Dense iteration (within `bitarena`): `.for_each()` is ~4.6x faster than a `for` loop at 0% empty (6.31 us vs 29.2 us).
 - In a churn + iterate "frame" benchmark, `.for_each()` is ~1.08x faster than `DenseSlotMap` here (24.9 us vs 26.9 us).
+- With 1KiB inline payloads (30k slots) in `realistic_sizes`, a dense “light touch” sweep was ~2x slower than
+  `thunderdome`, but at 99%–99.9% empty it was ~50x–200x faster (because empty slots avoid probing `T` entirely).
+
+Also included: a “realistic sizes” benchmark suite (`benches/realistic_sizes.rs`) with 256B and 1KiB inline payloads.
+It highlights an important nuance:
+
+- If your loop is a **dense sweep** over **large inline `T`** but only touches a small part of each object, AoS arenas
+  (like `thunderdome`) can be faster.
+- If your table is **sparse**, `bitarena` still wins big because it doesn’t probe empty slots’ `T` at all.
+- If your loop touches *most* of a large `T`, results often move back toward being bandwidth-bound and `bitarena` tends to
+  be competitive again.
 
 ### Scenario: game loop frame
 
@@ -156,7 +191,9 @@ Batch of 1,000 operations. Times are per-batch, except Get (per-item).
 ### Reproducing
 
 - Benchmark code: `benches/comparative.rs`
+- Realistic payload sizes: `benches/realistic_sizes.rs`
 - Command: `cargo +stable bench --bench comparative`
+- Command (payload sizes): `cargo +stable bench --bench realistic_sizes`
 - Rust: 1.93.0 (stable). MSRV: 1.70.0.
 - Compared crates: `thunderdome` 0.6, `slotmap` 1.0 (`DenseSlotMap` comes from `slotmap`)
 - Settings: LTO + `codegen-units=1` (`profile.bench`), `-C target-cpu=native` (repo `.cargo/config.toml`)

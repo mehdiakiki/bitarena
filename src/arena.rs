@@ -1487,10 +1487,8 @@ mod tests {
             }
         }
 
-        let mut seq: alloc::vec::Vec<(u64, u64)> = arena
-            .iter()
-            .map(|(idx, &v)| (idx.to_bits(), v))
-            .collect();
+        let mut seq: alloc::vec::Vec<(u64, u64)> =
+            arena.iter().map(|(idx, &v)| (idx.to_bits(), v)).collect();
         let mut par: alloc::vec::Vec<(u64, u64)> = arena
             .par_iter()
             .map(|(idx, v)| (idx.to_bits(), *v))

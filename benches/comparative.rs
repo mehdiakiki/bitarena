@@ -645,25 +645,33 @@ fn bench_rayon_iteration(c: &mut Criterion) {
         let label = format!("{:.0}%_empty", pct);
         let (arena, _) = make_bitarena(sparsity);
 
-        group.bench_with_input(BenchmarkId::new("bitarena_seq", &label), &arena, |b, arena| {
-            b.iter(|| {
-                let mut sum = 0u64;
-                for (_, &v) in arena.iter() {
-                    sum = sum.wrapping_add(v);
-                }
-                black_box(sum)
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::new("bitarena_seq", &label),
+            &arena,
+            |b, arena| {
+                b.iter(|| {
+                    let mut sum = 0u64;
+                    for (_, &v) in arena.iter() {
+                        sum = sum.wrapping_add(v);
+                    }
+                    black_box(sum)
+                })
+            },
+        );
 
-        group.bench_with_input(BenchmarkId::new("bitarena_par", &label), &arena, |b, arena| {
-            b.iter(|| {
-                let sum = arena
-                    .par_iter()
-                    .map(|(_, v)| *v)
-                    .reduce(|| 0u64, |a, b| a.wrapping_add(b));
-                black_box(sum)
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::new("bitarena_par", &label),
+            &arena,
+            |b, arena| {
+                b.iter(|| {
+                    let sum = arena
+                        .par_iter()
+                        .map(|(_, v)| *v)
+                        .reduce(|| 0u64, |a, b| a.wrapping_add(b));
+                    black_box(sum)
+                })
+            },
+        );
     }
 
     group.finish();

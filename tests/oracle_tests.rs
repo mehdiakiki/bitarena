@@ -63,9 +63,9 @@
 
 use bitarena::{Arena, Index};
 use proptest::prelude::*;
-use std::collections::HashMap;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
+use std::collections::HashMap;
 
 // ──────────────────────────────────────────────────────────────────────
 // Oracle implementation

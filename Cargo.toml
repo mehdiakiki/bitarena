@@ -57,6 +57,10 @@ harness = false
 name = "comparative"
 harness = false
 
+[[bench]]
+name = "realistic_sizes"
+harness = false
+
 [profile.bench]
 # ──────────────────────────────────────────────────────────────────────
 # CRITICAL: LTO + codegen-units=1 for accurate benchmarks.

@@ -236,4 +236,4 @@ Safety argument and full invariant set: [DESIGN.md](DESIGN.md).
 
 ## License
 
-Licensed under MIT.
+Licensed under the [MIT license](LICENSE).

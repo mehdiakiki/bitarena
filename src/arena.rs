@@ -363,6 +363,7 @@ impl<T> Arena<T> {
     /// Total: ~3 memory loads. For thunderdome: 1 large load + discriminant check.
     /// Our loads are smaller and more cache-friendly (bitset word may already
     /// be in L1 from a recent check on a nearby slot).
+    #[must_use]
     #[inline]
     pub fn get(&self, index: Index) -> Option<&T> {
         let slot = index.slot as usize;
@@ -381,6 +382,7 @@ impl<T> Arena<T> {
     /// Get a mutable reference to the value at `index`.
     ///
     /// Same checks as `get`, but returns `&mut T`.
+    #[must_use]
     #[inline]
     pub fn get_mut(&mut self, index: Index) -> Option<&mut T> {
         let slot = index.slot as usize;
@@ -409,6 +411,8 @@ impl<T> Arena<T> {
     /// enemy.hp -= player.damage;
     /// ```
     /// Without get2_mut, you'd need unsafe code or index juggling.
+    #[must_use]
+    #[track_caller]
     pub fn get2_mut(&mut self, a: Index, b: Index) -> (Option<&mut T>, Option<&mut T>) {
         assert_ne!(a.slot, b.slot, "get2_mut called with the same slot");
         let len = self.values.len();
@@ -455,6 +459,7 @@ impl<T> Arena<T> {
     ///
     /// Unlike `get`, this does NOT load the value — it only checks
     /// the bitset and generation. Even faster than `get` for large T.
+    #[must_use]
     #[inline]
     pub fn contains(&self, index: Index) -> bool {
         let slot = index.slot as usize;
@@ -467,6 +472,7 @@ impl<T> Arena<T> {
     ///
     /// Returns the full `Index` (slot + current generation) if occupied.
     /// This is useful for iterating by slot number or for debugging.
+    #[must_use]
     pub fn contains_slot(&self, slot: u32) -> Option<Index> {
         let s = slot as usize;
         if s >= self.next_fresh as usize || !self.occupancy.is_set(s) {
@@ -488,7 +494,12 @@ impl<T> Arena<T> {
     // the caller tracks validity externally.
     // ══════════════════════════════════════════════════════════════════
 
-    /// Get a reference by slot, ignoring generation.
+    /// Get a reference to the value at `slot`, ignoring generation.
+    ///
+    /// Returns `(current_index, &value)` if the slot is occupied, or `None` if empty.
+    /// Prefer [`get`](Arena::get) with a full [`Index`] for normal usage — this
+    /// bypasses the generation check and is intended for low-level or migration code.
+    #[must_use]
     pub fn get_by_slot(&self, slot: u32) -> Option<(Index, &T)> {
         let s = slot as usize;
         if s >= self.next_fresh as usize || !self.occupancy.is_set(s) {
@@ -505,6 +516,11 @@ impl<T> Arena<T> {
         ))
     }
 
+    /// Get a mutable reference to the value at `slot`, ignoring generation.
+    ///
+    /// Returns `(current_index, &mut value)` if the slot is occupied, or `None` if empty.
+    /// See [`get_by_slot`](Arena::get_by_slot) for caveats.
+    #[must_use]
     pub fn get_by_slot_mut(&mut self, slot: u32) -> Option<(Index, &mut T)> {
         let s = slot as usize;
         if s >= self.next_fresh as usize || !self.occupancy.is_set(s) {
@@ -521,6 +537,13 @@ impl<T> Arena<T> {
         ))
     }
 
+    /// Remove the element at `slot`, ignoring generation.
+    ///
+    /// Returns `(index_that_was_removed, value)` if the slot was occupied.
+    /// The generation of the returned `Index` reflects the generation that
+    /// was active at the time of removal.
+    /// Prefer [`remove`](Arena::remove) with a full [`Index`] for normal usage.
+    #[must_use]
     pub fn remove_by_slot(&mut self, slot: u32) -> Option<(Index, T)> {
         let s = slot as usize;
         if s >= self.next_fresh as usize || !self.occupancy.is_set(s) {
@@ -590,6 +613,19 @@ impl<T> Arena<T> {
         }
     }
 
+    /// Insert a value at a specific `slot`, automatically choosing the next generation.
+    ///
+    /// The generation is incremented from the slot's last known generation (or starts
+    /// at 1 for a never-used slot), so all previously issued indices for that slot
+    /// become invalid.
+    ///
+    /// Returns `(new_index, Option<old_value>)`. If the slot was already occupied the
+    /// old value is returned; otherwise `None`.
+    ///
+    /// See also [`insert_at`](Arena::insert_at) for inserting at a fully-specified
+    /// `(slot, generation)` pair.
+    #[must_use]
+    #[track_caller]
     pub fn insert_at_slot(&mut self, slot: u32, value: T) -> (Index, Option<T>) {
         let s = slot as usize;
         let gen = if s < self.next_fresh as usize {
@@ -616,6 +652,7 @@ impl<T> Arena<T> {
     ///
     /// The old index becomes invalid; the new index has an incremented generation.
     /// The value is NOT moved — only the generation counter changes.
+    #[must_use]
     pub fn invalidate(&mut self, index: Index) -> Option<Index> {
         if !self.contains(index) {
             return None;
@@ -636,26 +673,33 @@ impl<T> Arena<T> {
     // ══════════════════════════════════════════════════════════════════
 
     /// Number of occupied elements.
+    #[must_use]
     #[inline]
     pub const fn len(&self) -> usize {
         self.len as usize
     }
 
     /// Whether the arena is empty.
+    #[must_use]
     #[inline]
     pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
 
-    /// Total capacity (occupied + empty slots).
+    /// Total capacity: the number of slots currently allocated (occupied + free).
     ///
-    /// NOTE: This is the allocated capacity, not the Vec capacity.
-    /// It equals `next_fresh` (highest ever used slot) + free list length +
-    /// unused allocated capacity beyond next_fresh.
+    /// Note: this reflects the number of allocated slots, not the underlying
+    /// `Vec` capacity. Newly allocated slots beyond `next_fresh` are available
+    /// via the fresh-slot counter before the free list is consulted.
+    #[must_use]
     pub fn capacity(&self) -> usize {
         self.values.len()
     }
 
+    /// Reserve space for at least `additional` more elements without reallocation.
+    ///
+    /// Accounts for existing free slots; if enough are already available this
+    /// is a no-op.
     pub fn reserve(&mut self, additional: usize) {
         let currently_free = (self.next_fresh as usize).saturating_sub(self.len as usize);
         let to_reserve = additional.saturating_sub(currently_free);
@@ -736,6 +780,11 @@ impl<T> Arena<T> {
         )
     }
 
+    /// Mutably iterate over all occupied `(Index, &mut T)` pairs.
+    ///
+    /// Allows in-place mutation of every live value while also yielding its handle.
+    /// Use [`values_mut`](Arena::values_mut) if you only need `&mut T` without
+    /// the index.
     pub fn iter_mut(&mut self) -> IterMut<'_, T> {
         let remaining = self.len;
         let values_ptr = self.values.as_mut_ptr();
@@ -808,6 +857,9 @@ impl<T> Arena<T> {
     }
 
     /// Iterate over mutable references to all occupied values, without yielding indices.
+    ///
+    /// Slightly cheaper than [`iter_mut`](Arena::iter_mut) because no
+    /// [`Index`] is constructed per element.
     pub fn values_mut(&mut self) -> crate::iter::ValuesMut<'_, T> {
         let values_len = self.values.len();
         let values_ptr = self.values.as_mut_ptr();
@@ -824,7 +876,7 @@ impl<T> Arena<T> {
     /// Iterate over the [`Index`] of every occupied slot, without loading values.
     ///
     /// Useful for collecting all live handles without touching value data.
-    pub fn keys(&self) -> crate::iter::Keys<'_, T> {
+    pub fn keys(&self) -> crate::iter::Keys<'_> {
         crate::iter::Keys::new(self.occupancy.words(), &self.generations[..], self.len)
     }
 
@@ -834,6 +886,11 @@ impl<T> Arena<T> {
         crate::iter::par_keys(self.occupancy.words(), &self.generations[..])
     }
 
+    /// Remove and yield every element from the arena.
+    ///
+    /// The arena is left empty after the iterator is consumed (or dropped).
+    /// Unlike [`clear`](Arena::clear), `drain` lets you inspect each
+    /// `(Index, T)` pair as it is removed.
     pub fn drain(&mut self) -> Drain<'_, T> {
         let words = self.occupancy.words();
         let mut word_idx = 0;
@@ -853,6 +910,11 @@ impl<T> Arena<T> {
         }
     }
 
+    /// Remove all elements, dropping them in place.
+    ///
+    /// Resets the arena to the same state as [`Arena::new`]: `len` becomes 0,
+    /// `next_fresh` is reset to 0, and the free list is cleared.  Allocated
+    /// memory (capacity) is retained.
     pub fn clear(&mut self) {
         if core::mem::needs_drop::<T>() {
             for slot in self.occupancy.iter_set_bits() {
@@ -865,6 +927,16 @@ impl<T> Arena<T> {
         self.len = 0;
     }
 
+    /// Retain only the elements for which `f(index, &mut value)` returns `true`.
+    ///
+    /// Elements for which `f` returns `false` are removed and dropped.
+    /// Iteration order is ascending slot order.
+    ///
+    /// # Note on key argument
+    /// The [`Index`] passed to `f` is passed **by value** (not reference) because
+    /// `Index` is `Copy`. This matches the ergonomics of `HashMap::retain` where
+    /// the key is a plain `&K`, but avoids a redundant dereference for a
+    /// two-word copy type.
     pub fn retain<F: FnMut(Index, &mut T) -> bool>(&mut self, mut f: F) {
         // Walk all occupancy words directly to avoid the intermediate Vec
         // allocation that .collect() would require. We iterate by word index
@@ -915,6 +987,7 @@ impl<T> Default for Arena<T> {
 impl<T> ops::Index<Index> for Arena<T> {
     type Output = T;
 
+    #[track_caller]
     fn index(&self, index: Index) -> &Self::Output {
         self.get(index)
             .unwrap_or_else(|| panic!("No entry at index {:?}", index))
@@ -923,11 +996,31 @@ impl<T> ops::Index<Index> for Arena<T> {
 
 /// `arena[index] = value` — panics if index is invalid.
 impl<T> ops::IndexMut<Index> for Arena<T> {
+    #[track_caller]
     fn index_mut(&mut self, index: Index) -> &mut Self::Output {
         self.get_mut(index)
             .unwrap_or_else(|| panic!("No entry at index {:?}", index))
     }
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// SEND + SYNC
+// ══════════════════════════════════════════════════════════════════════
+// Arena<T> holds no thread-local state and all raw pointers are owned
+// exclusively. The auto-derived Send/Sync bounds propagate T's bounds
+// correctly.  These compile-time assertions catch regressions.
+// ══════════════════════════════════════════════════════════════════════
+
+const _: () = {
+    fn _assert_send<T: Send>() {
+        fn check<U: Send>() {}
+        check::<Arena<T>>();
+    }
+    fn _assert_sync<T: Sync>() {
+        fn check<U: Sync>() {}
+        check::<Arena<T>>();
+    }
+};
 
 impl<T> IntoIterator for Arena<T> {
     type Item = (Index, T);

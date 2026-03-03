@@ -841,17 +841,21 @@ impl<'a, T> FusedIterator for ValuesMut<'a, T> {}
 // Useful for "collect all live keys" before a mutation pass.
 // ──────────────────────────────────────────────────────────────────────
 
-pub struct Keys<'a, T> {
+/// An iterator over the live [`Index`] handles of an [`Arena`](crate::Arena).
+///
+/// Obtained via [`Arena::keys`](crate::Arena::keys). Yields every valid
+/// [`Index`] without loading values, making it the cheapest way to collect
+/// all live handles.
+pub struct Keys<'a> {
     pub(crate) occupancy_words: &'a [u64],
     pub(crate) generations: &'a [u32],
     pub(crate) word_idx: usize,
     pub(crate) current_word: u64,
     pub(crate) remaining: u32,
     pub(crate) base_slot: usize,
-    pub(crate) _marker: core::marker::PhantomData<&'a T>,
 }
 
-impl<'a, T> Keys<'a, T> {
+impl<'a> Keys<'a> {
     pub(crate) fn new(occupancy_words: &'a [u64], generations: &'a [u32], remaining: u32) -> Self {
         let mut word_idx = 0usize;
         let mut current_word = 0u64;
@@ -871,12 +875,11 @@ impl<'a, T> Keys<'a, T> {
             current_word,
             remaining,
             base_slot,
-            _marker: core::marker::PhantomData,
         }
     }
 }
 
-impl<'a, T> Iterator for Keys<'a, T> {
+impl<'a> Iterator for Keys<'a> {
     type Item = Index;
 
     #[inline(always)]
@@ -963,8 +966,8 @@ impl<'a, T> Iterator for Keys<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for Keys<'a, T> {}
-impl<'a, T> FusedIterator for Keys<'a, T> {}
+impl<'a> ExactSizeIterator for Keys<'a> {}
+impl<'a> FusedIterator for Keys<'a> {}
 
 // ──────────────────────────────────────────────────────────────────────
 // IntoIter — Consuming iteration: yields (Index, T)

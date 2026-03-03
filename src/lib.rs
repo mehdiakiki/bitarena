@@ -85,3 +85,24 @@ mod serde_impl;
 pub use arena::Arena;
 pub use index::Index;
 pub use iter::{Drain, IntoIter, Iter, IterMut, Keys, Values, ValuesMut};
+
+// ──────────────────────────────────────────────────────────────────────
+// SERDE WIRE FORMAT (feature = "serde")
+// ──────────────────────────────────────────────────────────────────────
+// Arena<T> serializes as a JSON array (or equivalent) of entry objects:
+//
+//   [
+//     { "slot": 0, "generation": 1, "value": <T> },
+//     { "slot": 3, "generation": 2, "value": <T> },
+//     ...
+//   ]
+//
+// Only occupied entries are emitted (sparse arenas serialize small).
+// Slot order in the sequence matches arena iteration order (ascending slot).
+//
+// Index serializes as a single u64 with the layout:
+//   bits 63..32 — generation (NonZeroU32, upper half)
+//   bits 31..0  — slot (u32, lower half)
+// This matches the `Index::to_bits()` / `Index::from_bits()` encoding and
+// is stable across all semver-compatible versions.
+// ──────────────────────────────────────────────────────────────────────

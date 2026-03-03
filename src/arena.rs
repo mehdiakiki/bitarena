@@ -358,7 +358,7 @@ impl<T> Arena<T> {
     ///   1. Bounds check (1 comparison)
     ///   2. Bit check (1 memory load from bitset, 1 AND, 1 comparison)
     ///   3. Generation check (1 memory load from generations, 1 comparison)
-    ///   4. Return reference to values[slot]
+    ///   4. Return reference to values\[slot\]
     ///
     /// Total: ~3 memory loads. For thunderdome: 1 large load + discriminant check.
     /// Our loads are smaller and more cache-friendly (bitset word may already

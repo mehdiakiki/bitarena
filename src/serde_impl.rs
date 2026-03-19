@@ -90,7 +90,7 @@ impl<T: Serialize> Serialize for Arena<T> {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         // Serialize as a sequence of { slot, generation, value } objects.
         // Only occupied entries are emitted.
-        let mut seq = s.serialize_seq(Some(self.len() as usize))?;
+        let mut seq = s.serialize_seq(Some(self.len()))?;
         for (idx, value) in self.iter() {
             seq.serialize_element(&SerEntry {
                 slot: idx.slot(),

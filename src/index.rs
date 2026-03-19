@@ -88,8 +88,7 @@ impl Index {
     /// 4 billion reuses of the last slot to accidentally collide.
     pub const DANGLING: Self = Self {
         slot: u32::MAX,
-        // SAFETY: u32::MAX is not zero.
-        generation: unsafe { NonZeroU32::new_unchecked(u32::MAX) },
+        generation: NonZeroU32::new(u32::MAX).unwrap(),
     };
 
     // ──────────────────────────────────────────────────────────────────

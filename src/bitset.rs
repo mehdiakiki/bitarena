@@ -117,7 +117,7 @@ impl Bitset {
     }
 
     pub(crate) fn with_capacity(capacity: usize) -> Self {
-        let num_words = (capacity + 63) / 64;
+        let num_words = capacity.div_ceil(64);
         Self {
             words: alloc::vec![0u64; num_words],
             count: 0,
@@ -226,13 +226,13 @@ impl Bitset {
     /// Raw access to the underlying word slice (for iterators).
     #[inline]
     pub(crate) fn words(&self) -> &[u64] {
-        &*self.words
+        &self.words
     }
 
     /// Mutable raw access to the underlying word slice (for fold() bulk-clear).
     #[inline]
     pub(crate) fn words_mut(&mut self) -> &mut [u64] {
-        &mut *self.words
+        &mut self.words
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -288,7 +288,7 @@ impl Bitset {
             }
         }
         SetBitsIter {
-            words: &*self.words,
+            words: &self.words,
             word_idx,
             current_word,
         }

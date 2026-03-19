@@ -2,7 +2,7 @@
 name = "bitarena"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.70.0"
+rust-version = "1.85.0"
 license = "MIT"
 description = "A bitset-accelerated generational arena optimized for sparse iteration."
 repository = "https://github.com/mehdiakiki/bitarena"

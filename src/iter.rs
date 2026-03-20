@@ -26,9 +26,13 @@
 //
 // PREFETCH STRATEGY
 // ─────────────────
-// In fold(), we issue software prefetch hints one word ahead using:
+// Both fold() and next() issue software prefetch hints one word ahead:
 //   - x86_64: _mm_prefetch(_MM_HINT_T0)
 //   - aarch64: core::arch::aarch64::_prefetch (PREFETCH_READ + PREFETCH_LOCALITY3)
+//
+// When next() advances to a new occupancy word, we prefetch the values
+// at that word's base slot.  By the time we actually read those values
+// (after tzcnt/blsr or the dense loop), the cache line is already warm.
 //
 // ══════════════════════════════════════════════════════════════════════
 
@@ -37,6 +41,29 @@ use core::mem::MaybeUninit;
 use core::num::NonZeroU32;
 
 use crate::index::Index;
+
+/// Issue a software prefetch hint for `ptr` into L1 cache.
+/// No-op on architectures without intrinsic support.
+#[inline(always)]
+unsafe fn prefetch_read<T>(ptr: *const T) {
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
+    {
+        use core::arch::x86_64::{_mm_prefetch, _MM_HINT_T0};
+        _mm_prefetch(ptr as *const i8, _MM_HINT_T0);
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        use core::arch::aarch64::{_prefetch, _PREFETCH_LOCALITY3, _PREFETCH_READ};
+        _prefetch(ptr as *const i8, _PREFETCH_READ, _PREFETCH_LOCALITY3);
+    }
+    #[cfg(not(any(
+        all(target_arch = "x86_64", target_feature = "sse"),
+        target_arch = "aarch64"
+    )))]
+    {
+        let _ = ptr;
+    }
+}
 
 // ──────────────────────────────────────────────────────────────────────
 // Iter — Immutable iteration: yields (Index, &T)
@@ -103,6 +130,10 @@ impl<'a, T> Iterator for Iter<'a, T> {
                 }
                 let w = unsafe { *self.occupancy_words.get_unchecked(self.word_idx) };
                 let base = self.word_idx << 6;
+                // Prefetch values for this word's slots while we set up state.
+                if w != 0 {
+                    unsafe { prefetch_read(self.values.as_ptr().add(base)) };
+                }
                 if w == u64::MAX {
                     // Full word: enter dense mode — zero tzcnt/blsr overhead.
                     self.base_slot = base + 1;
@@ -185,26 +216,8 @@ impl<'a, T> Iterator for Iter<'a, T> {
 
             // Prefetch the values cache line for the NEXT word's base slot.
             let next_base = base + 64;
-            #[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
-            unsafe {
-                use core::arch::x86_64::{_mm_prefetch, _MM_HINT_T0};
-                if next_base < self.values.len() {
-                    _mm_prefetch(
-                        self.values.as_ptr().add(next_base) as *const i8,
-                        _MM_HINT_T0,
-                    );
-                }
-            }
-            #[cfg(target_arch = "aarch64")]
-            unsafe {
-                use core::arch::aarch64::{_prefetch, _PREFETCH_LOCALITY3, _PREFETCH_READ};
-                if next_base < self.values.len() {
-                    _prefetch(
-                        self.values.as_ptr().add(next_base) as *const i8,
-                        _PREFETCH_READ,
-                        _PREFETCH_LOCALITY3,
-                    );
-                }
+            if next_base < self.values.len() {
+                unsafe { prefetch_read(self.values.as_ptr().add(next_base)) };
             }
 
             if word == u64::MAX {
@@ -348,6 +361,9 @@ impl<'a, T> Iterator for IterMut<'a, T> {
                 }
                 let w = unsafe { *self.occupancy_words.get_unchecked(self.word_idx) };
                 let base = self.word_idx << 6;
+                if w != 0 {
+                    unsafe { prefetch_read(self.values_ptr.add(base) as *const T) };
+                }
                 if w == u64::MAX {
                     self.base_slot = base + 1;
                     self.dense_end = base + 64;
@@ -423,23 +439,8 @@ impl<'a, T> Iterator for IterMut<'a, T> {
 
             let next_base = base + 64;
             let values_len = self.occupancy_words.len() << 6;
-            #[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
-            unsafe {
-                use core::arch::x86_64::{_mm_prefetch, _MM_HINT_T0};
-                if next_base < values_len {
-                    _mm_prefetch(self.values_ptr.add(next_base) as *const i8, _MM_HINT_T0);
-                }
-            }
-            #[cfg(target_arch = "aarch64")]
-            unsafe {
-                use core::arch::aarch64::{_prefetch, _PREFETCH_LOCALITY3, _PREFETCH_READ};
-                if next_base < values_len {
-                    _prefetch(
-                        self.values_ptr.add(next_base) as *const i8,
-                        _PREFETCH_READ,
-                        _PREFETCH_LOCALITY3,
-                    );
-                }
+            if next_base < values_len {
+                unsafe { prefetch_read(self.values_ptr.add(next_base) as *const T) };
             }
 
             if word == u64::MAX {
@@ -554,6 +555,9 @@ impl<'a, T> Iterator for Values<'a, T> {
                 }
                 let w = unsafe { *self.occupancy_words.get_unchecked(self.word_idx) };
                 let base = self.word_idx << 6;
+                if w != 0 {
+                    unsafe { prefetch_read(self.values.as_ptr().add(base)) };
+                }
                 if w == u64::MAX {
                     self.base_slot = base + 1;
                     self.dense_end = base + 64;
@@ -609,26 +613,8 @@ impl<'a, T> Iterator for Values<'a, T> {
             }
             let base = (start + wi) << 6;
             let next_base = base + 64;
-            #[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
-            unsafe {
-                use core::arch::x86_64::{_mm_prefetch, _MM_HINT_T0};
-                if next_base < self.values.len() {
-                    _mm_prefetch(
-                        self.values.as_ptr().add(next_base) as *const i8,
-                        _MM_HINT_T0,
-                    );
-                }
-            }
-            #[cfg(target_arch = "aarch64")]
-            unsafe {
-                use core::arch::aarch64::{_prefetch, _PREFETCH_LOCALITY3, _PREFETCH_READ};
-                if next_base < self.values.len() {
-                    _prefetch(
-                        self.values.as_ptr().add(next_base) as *const i8,
-                        _PREFETCH_READ,
-                        _PREFETCH_LOCALITY3,
-                    );
-                }
+            if next_base < self.values.len() {
+                unsafe { prefetch_read(self.values.as_ptr().add(next_base)) };
             }
             if word == u64::MAX {
                 for i in 0..64usize {
@@ -739,6 +725,9 @@ impl<'a, T> Iterator for ValuesMut<'a, T> {
                 }
                 let w = unsafe { *self.occupancy_words.get_unchecked(self.word_idx) };
                 let base = self.word_idx << 6;
+                if w != 0 {
+                    unsafe { prefetch_read(self.values_ptr.add(base) as *const T) };
+                }
                 if w == u64::MAX {
                     self.base_slot = base + 1;
                     self.dense_end = base + 64;
@@ -792,23 +781,8 @@ impl<'a, T> Iterator for ValuesMut<'a, T> {
             }
             let base = (start + wi) << 6;
             let next_base = base + 64;
-            #[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
-            unsafe {
-                use core::arch::x86_64::{_mm_prefetch, _MM_HINT_T0};
-                if next_base < self.values_len {
-                    _mm_prefetch(self.values_ptr.add(next_base) as *const i8, _MM_HINT_T0);
-                }
-            }
-            #[cfg(target_arch = "aarch64")]
-            unsafe {
-                use core::arch::aarch64::{_prefetch, _PREFETCH_LOCALITY3, _PREFETCH_READ};
-                if next_base < self.values_len {
-                    _prefetch(
-                        self.values_ptr.add(next_base) as *const i8,
-                        _PREFETCH_READ,
-                        _PREFETCH_LOCALITY3,
-                    );
-                }
+            if next_base < self.values_len {
+                unsafe { prefetch_read(self.values_ptr.add(next_base) as *const T) };
             }
             if word == u64::MAX {
                 for i in 0..64usize {

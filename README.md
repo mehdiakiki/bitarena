@@ -52,11 +52,11 @@ assert!(arena.get(a).is_none()); // stale index
 |  | vs thunderdome | vs slotmap | vs dense_slotmap |
 |--|----------------|------------|------------------|
 | **Iteration (sparse)** | 5–400x faster | 10–200x faster | 2–35x slower |
-| **Iteration (dense, small T)** | 1.5x faster | ~same | 3–4x slower |
-| **Iteration (dense, large T, full-touch)** | 1.5x faster | 1.1x faster | **1.5x faster** |
+| **Iteration (dense, small T)** | 1.7x faster | ~same | 2–3x slower |
+| **Iteration (dense, large T, full-touch)** | 1.3x faster | ~same | **1.1x faster** |
 | **Get** | 1.3x faster | 1.5x faster | ~same |
-| **Insert** | ~same | 1.5x slower | 1.6x faster |
-| **Remove** | ~same | 1.3x slower | 1.5x faster |
+| **Insert** | ~same | 1.7x slower | 1.4x faster |
+| **Remove** | ~same | 1.4x slower | 1.4x faster |
 
 `bitarena` is a strict upgrade over `thunderdome` and `slotmap`. The only arena that beats it on
 iteration is `dense_slotmap`, which pays for its packed array with slower mutations and extra memory.

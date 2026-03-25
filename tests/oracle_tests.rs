@@ -157,6 +157,31 @@ enum Op {
     Retain(u64), // keep only values >= this threshold
 }
 
+/*fn op_strategy() -> impl Strategy<Value = Op> {
+    prop_oneof![
+        5 => (0u64..1000).prop_map(Op::Insert),
+        4 => (0usize..200).prop_map(Op::Remove),
+        4 => (0usize..200).prop_map(Op::Get),
+        3 => (0usize..200).prop_map(Op::Contains),
+        2 => Just(Op::GetStale),
+        3 => Just(Op::IterCollect),
+        2 => Just(Op::ValuesSum),
+        2 => Just(Op::KeysCount),
+        2 => (0u64..1000).prop_map(Op::Retain),
+    ]
+}*/
+#[cfg(miri)]
+fn op_strategy() -> impl Strategy<Value = Op> {
+    prop_oneof![
+        6 => (0u64..1000).prop_map(Op::Insert),
+        4 => (0usize..50).prop_map(Op::Remove),
+        3 => (0usize..50).prop_map(Op::Get),
+        2 => (0usize..50).prop_map(Op::Contains),
+        1 => Just(Op::GetStale),
+    ]
+}
+
+#[cfg(not(miri))]
 fn op_strategy() -> impl Strategy<Value = Op> {
     prop_oneof![
         5 => (0u64..1000).prop_map(Op::Insert),
@@ -174,6 +199,12 @@ fn op_strategy() -> impl Strategy<Value = Op> {
 // ──────────────────────────────────────────────────────────────────────
 // The oracle test
 // ──────────────────────────────────────────────────────────────────────
+
+#[cfg(miri)]
+const PROPTEST_CASES: u32 = 1;
+
+#[cfg(miri)]
+const MAX_SHRINK_ITERS: u32 = 0;
 
 proptest! {
     #![proptest_config(ProptestConfig {

@@ -45,6 +45,7 @@ serde = { version = "1.0", optional = true, default-features = false, features =
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.4"
+serde_json = "1.0"
 # thunderdome and slotmap for comparative benchmarks
 thunderdome = "0.6"
 slotmap = "1.0"

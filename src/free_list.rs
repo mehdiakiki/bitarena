@@ -116,13 +116,6 @@ impl FreeList {
         self.slots.len()
     }
 
-    /// Clear the free list entirely.
-    ///
-    /// Called by Arena::clear() after all values have been dropped.
-    pub(crate) fn clear(&mut self) {
-        self.slots.clear();
-    }
-
     /// Remove a specific slot from the free list (if present).
     ///
     /// Called by Arena::insert_at() when the target slot happens to be

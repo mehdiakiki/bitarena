@@ -229,12 +229,6 @@ impl Bitset {
         &self.words
     }
 
-    /// Mutable raw access to the underlying word slice (for fold() bulk-clear).
-    #[inline]
-    pub(crate) fn words_mut(&mut self) -> &mut [u64] {
-        &mut self.words
-    }
-
     // ──────────────────────────────────────────────────────────────────
     // GROWTH
     // ──────────────────────────────────────────────────────────────────
@@ -292,19 +286,6 @@ impl Bitset {
             word_idx,
             current_word,
         }
-    }
-
-    // ──────────────────────────────────────────────────────────────────
-    // BULK OPERATIONS (for drain, clear, retain)
-    // ──────────────────────────────────────────────────────────────────
-
-    /// Clear all bits and reset count to 0.
-    ///
-    /// NOTE: This does NOT drop values. The caller (Arena::clear) must
-    /// drop all occupied values BEFORE calling this.
-    pub(crate) fn clear_all(&mut self) {
-        self.words.fill(0);
-        self.count = 0;
     }
 
     // ──────────────────────────────────────────────────────────────────

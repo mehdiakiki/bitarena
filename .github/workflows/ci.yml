@@ -34,6 +34,18 @@ jobs:
       - run: cargo fmt --check
         if: matrix.rust == 'stable'
 
+  arm64:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - run: cargo check --lib --target aarch64-unknown-linux-gnu --no-default-features
+      - run: cargo check --lib --target aarch64-unknown-linux-gnu --all-features
+
   miri:
     runs-on: ubuntu-latest
     steps:

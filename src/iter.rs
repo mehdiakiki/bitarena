@@ -28,7 +28,6 @@
 // ─────────────────
 // Both fold() and next() issue software prefetch hints one word ahead:
 //   - x86_64: _mm_prefetch(_MM_HINT_T0)
-//   - aarch64: core::arch::aarch64::_prefetch (PREFETCH_READ + PREFETCH_LOCALITY3)
 //
 // When next() advances to a new occupancy word, we prefetch the values
 // at that word's base slot.  By the time we actually read those values
@@ -51,15 +50,7 @@ unsafe fn prefetch_read<T>(ptr: *const T) {
         use core::arch::x86_64::{_mm_prefetch, _MM_HINT_T0};
         _mm_prefetch(ptr as *const i8, _MM_HINT_T0);
     }
-    #[cfg(target_arch = "aarch64")]
-    {
-        use core::arch::aarch64::{_prefetch, _PREFETCH_LOCALITY3, _PREFETCH_READ};
-        _prefetch(ptr as *const i8, _PREFETCH_READ, _PREFETCH_LOCALITY3);
-    }
-    #[cfg(not(any(
-        all(target_arch = "x86_64", target_feature = "sse"),
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "sse")))]
     {
         let _ = ptr;
     }

@@ -151,19 +151,23 @@ enum Op {
     Get(usize),      // index into valid_indices vec
     Contains(usize), // index into valid_indices vec
     GetStale,        // try to get a removed (stale) index
-                     //IterCollect,
-                     //ValuesSum,
-                     //KeysCount,
-                     //Retain(u64), // keep only values >= this threshold
+    IterCollect,
+    ValuesSum,
+    KeysCount,
+    Retain(u64), // keep only values >= this threshold
 }
 
 fn op_strategy() -> impl Strategy<Value = Op> {
     prop_oneof![
-        6 => (0u64..1000).prop_map(Op::Insert),
-        4 => (0usize..50).prop_map(Op::Remove),
-        3 => (0usize..50).prop_map(Op::Get),
-        2 => (0usize..50).prop_map(Op::Contains),
-        1 => Just(Op::GetStale),
+        5 => (0u64..1000).prop_map(Op::Insert),
+        4 => (0usize..200).prop_map(Op::Remove),
+        4 => (0usize..200).prop_map(Op::Get),
+        3 => (0usize..200).prop_map(Op::Contains),
+        2 => Just(Op::GetStale),
+        3 => Just(Op::IterCollect),
+        2 => Just(Op::ValuesSum),
+        2 => Just(Op::KeysCount),
+        2 => (0u64..1000).prop_map(Op::Retain),
     ]
 }
 
@@ -171,10 +175,10 @@ fn op_strategy() -> impl Strategy<Value = Op> {
 // The oracle test
 // ──────────────────────────────────────────────────────────────────────
 
-const PROPTEST_CASES: u32 = 1;
-const MAX_SHRINK_ITERS: u32 = 0;
+const PROPTEST_CASES: u32 = if cfg!(miri) { 8 } else { 1024 };
+const MAX_SHRINK_ITERS: u32 = if cfg!(miri) { 64 } else { 512 };
 const OPS_MIN: usize = 1;
-const OPS_MAX: usize = 40;
+const OPS_MAX: usize = if cfg!(miri) { 80 } else { 500 };
 
 proptest! {
     #![proptest_config(ProptestConfig {
@@ -255,7 +259,7 @@ proptest! {
                     }
                 }
 
-                /*Op::IterCollect => {
+                Op::IterCollect => {
                     // Collect arena iter as (slot, value) pairs and compare to oracle.
                     let mut arena_items: Vec<(u32, u64)> = arena
                         .iter()
@@ -327,9 +331,8 @@ proptest! {
                     prop_assert_eq!(&arena_items, &oracle_items,
                         "After Retain({}): arena != oracle", threshold);
 
-                    // Rebuild valid_indices (stale ones may have been removed by retain).
                     valid_indices.retain(|idx| arena.contains(*idx));
-                }*/
+                }
             }
 
             // ── Invariant checks after every operation ─────────────────
@@ -402,7 +405,7 @@ proptest! {
                     }
                 }
 
-                /*Op::IterCollect => {
+                Op::IterCollect => {
                     let _ = arena.iter().count();
                 }
 
@@ -418,7 +421,7 @@ proptest! {
                     let threshold = *threshold;
                     arena.retain(|_, val| *val >= threshold);
                     valid_indices.retain(|idx| arena.contains(*idx));
-                }*/
+                }
             }
 
             let mut seq_values: Vec<u64> = arena.values().copied().collect();

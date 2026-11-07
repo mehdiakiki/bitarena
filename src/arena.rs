@@ -1377,7 +1377,7 @@ mod tests {
     fn get2_mut_same_slot_panics() {
         let mut arena = Arena::new();
         let a = arena.insert(1u32);
-        arena.get2_mut(a, a);
+        let _ = arena.get2_mut(a, a);
     }
 
     #[test]

@@ -15,6 +15,8 @@
 use bitarena::Arena;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
+mod support;
+
 // ──────────────────────────────────────────────────────────────────────
 // Deterministic LCG (identical to comparative.rs — no shared module)
 // ──────────────────────────────────────────────────────────────────────
@@ -212,8 +214,8 @@ fn bench_slot_reuse(c: &mut Criterion) {
 fn bench_sparsity_scaling(c: &mut Criterion) {
     let mut group = c.benchmark_group("iter_sparsity_scaling");
 
-    for &sparsity in &[0.0f64, 0.5, 0.9, 0.99, 0.999] {
-        let label = format!("{}%_empty", (sparsity * 100.0) as u32);
+    for &sparsity in &support::SPARSITIES {
+        let label = support::sparsity_label(sparsity);
         let mut arena: Arena<u64> = Arena::with_capacity(100_000);
         let mut keys: Vec<bitarena::Index> = (0..100_000u64).map(|v| arena.insert(v)).collect();
         let to_remove = (100_000.0 * sparsity) as usize;

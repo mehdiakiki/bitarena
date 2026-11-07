@@ -61,7 +61,7 @@ use core::mem::MaybeUninit;
 use core::num::NonZeroU32;
 use core::ops;
 
-use crate::bitset::Bitset;
+use crate::bitset::{Bitset, SetBitsIter};
 use crate::free_list::FreeList;
 use crate::index::Index;
 use crate::iter::{Drain, IntoIter, Iter, IterMut};
@@ -910,21 +910,11 @@ impl<T> Arena<T> {
         }
     }
 
-    /// Remove all elements, dropping them in place.
+    /// Remove all elements while retaining allocated memory.
     ///
-    /// Resets the arena to the same state as [`Arena::new`]: `len` becomes 0,
-    /// `next_fresh` is reset to 0, and the free list is cleared.  Allocated
-    /// memory (capacity) is retained.
+    /// Handles issued before clearing remain invalid after new values are inserted.
     pub fn clear(&mut self) {
-        if core::mem::needs_drop::<T>() {
-            for slot in self.occupancy.iter_set_bits() {
-                unsafe { self.values.get_unchecked_mut(slot).assume_init_drop() };
-            }
-        }
-        self.occupancy.clear_all();
-        self.free_list.clear();
-        self.next_fresh = 0;
-        self.len = 0;
+        self.drain().for_each(drop);
     }
 
     /// Retain only the elements for which `f(index, &mut value)` returns `true`.
@@ -963,10 +953,11 @@ impl<T> Arena<T> {
                     self.values.get_unchecked_mut(slot).assume_init_mut()
                 });
                 if !keep {
-                    unsafe { self.values.get_unchecked_mut(slot).assume_init_drop() };
+                    let value = unsafe { self.values.as_ptr().add(slot).cast::<T>().read() };
                     self.occupancy.clear(slot);
                     self.free_list.push(slot as u32);
                     self.len -= 1;
+                    drop(value);
                 }
             }
         }
@@ -1076,12 +1067,34 @@ impl<'a, T> IntoIterator for &'a mut Arena<T> {
 //
 // ══════════════════════════════════════════════════════════════════════
 
+struct ValueDropGuard<'a, T> {
+    slots: SetBitsIter<'a>,
+    values: &'a mut [MaybeUninit<T>],
+}
+
+impl<T> ValueDropGuard<'_, T> {
+    fn drop_remaining(&mut self) {
+        for slot in self.slots.by_ref() {
+            // SAFETY: I1 guarantees initialized values, and the iterator visits each slot once.
+            unsafe { self.values.get_unchecked_mut(slot).assume_init_drop() };
+        }
+    }
+}
+
+impl<T> Drop for ValueDropGuard<'_, T> {
+    fn drop(&mut self) {
+        self.drop_remaining();
+    }
+}
+
 impl<T> Drop for Arena<T> {
     fn drop(&mut self) {
         if core::mem::needs_drop::<T>() {
-            for slot in self.occupancy.iter_set_bits() {
-                unsafe { self.values.get_unchecked_mut(slot).assume_init_drop() };
-            }
+            let mut guard = ValueDropGuard {
+                slots: self.occupancy.iter_set_bits(),
+                values: &mut self.values,
+            };
+            guard.drop_remaining();
         }
     }
 }
@@ -1095,23 +1108,21 @@ impl<T: Clone> Clone for Arena<T> {
         let cap = self.values.len();
         let mut new_values: Vec<MaybeUninit<T>> = Vec::with_capacity(cap);
         unsafe { new_values.set_len(cap) };
-        for slot in self.occupancy.iter_set_bits() {
-            let cloned = unsafe { self.values.get_unchecked(slot).assume_init_ref() }.clone();
-            unsafe {
-                new_values
-                    .as_mut_ptr()
-                    .add(slot)
-                    .write(MaybeUninit::new(cloned))
-            };
-        }
-        Self {
-            occupancy: self.occupancy.clone(),
+        let mut cloned_arena = Self {
+            occupancy: Bitset::with_capacity(cap),
             values: new_values,
             generations: self.generations.clone(),
             free_list: self.free_list.clone(),
             next_fresh: self.next_fresh,
-            len: self.len,
+            len: 0,
+        };
+        for slot in self.occupancy.iter_set_bits() {
+            let cloned = unsafe { self.values.get_unchecked(slot).assume_init_ref() }.clone();
+            cloned_arena.values[slot].write(cloned);
+            cloned_arena.occupancy.set_unchecked(slot);
+            cloned_arena.len += 1;
         }
+        cloned_arena
     }
 }
 

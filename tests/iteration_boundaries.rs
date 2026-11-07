@@ -25,7 +25,10 @@ fn iterators_cover_dense_and_sparse_word_boundaries() {
             expected
         );
         assert_eq!(
-            arena.keys().map(|key| key.slot() as u64).collect::<Vec<_>>(),
+            arena
+                .keys()
+                .map(|key| key.slot() as u64)
+                .collect::<Vec<_>>(),
             expected
         );
 

@@ -586,6 +586,9 @@ impl<T> Arena<T> {
             self.generations.resize(new_cap, 0);
         }
         if slot >= self.next_fresh as usize {
+            for skipped in self.next_fresh..index.slot {
+                self.free_list.push(skipped);
+            }
             self.next_fresh = (slot + 1) as u32;
         }
         unsafe { *self.generations.get_unchecked_mut(slot) = index.generation.get() };
@@ -688,9 +691,9 @@ impl<T> Arena<T> {
 
     /// Total capacity: the number of slots currently allocated (occupied + free).
     ///
-    /// Note: this reflects the number of allocated slots, not the underlying
-    /// `Vec` capacity. Newly allocated slots beyond `next_fresh` are available
-    /// via the fresh-slot counter before the free list is consulted.
+    /// This returns the slot storage length, which can be smaller than the
+    /// underlying `Vec` capacity. Slots beyond `next_fresh` are available to
+    /// ordinary inserts through the fresh-slot counter.
     #[must_use]
     pub fn capacity(&self) -> usize {
         self.values.len()
@@ -701,7 +704,8 @@ impl<T> Arena<T> {
     /// Accounts for existing free slots; if enough are already available this
     /// is a no-op.
     pub fn reserve(&mut self, additional: usize) {
-        let currently_free = (self.next_fresh as usize).saturating_sub(self.len as usize);
+        let fresh_slots = self.values.len() - self.next_fresh as usize;
+        let currently_free = self.free_list.len() + fresh_slots;
         let to_reserve = additional.saturating_sub(currently_free);
         if to_reserve == 0 {
             return;

@@ -110,7 +110,6 @@ impl FreeList {
     }
 
     /// Number of free slots available for reuse.
-    #[cfg(test)]
     #[inline]
     pub(crate) fn len(&self) -> usize {
         self.slots.len()
